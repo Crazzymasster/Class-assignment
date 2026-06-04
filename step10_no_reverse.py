@@ -1,13 +1,17 @@
 """
-STEP 8: Final Polish & Enhancements
-====================================
+STEP 10: Lock Backwards Movement - Prevent Accidental Death
+===========================================================
 
-ALGORITHM THINKING - FINAL VERSION:
-- Question: How do we make the game more interesting?
-- Ideas: Speed increases with score, better visuals, sound (optional)
-- Rules: Every X points, speed increases slightly
+ALGORITHM THINKING:
+- Question: Players accidentally press the opposite direction and die instantly!
+- Idea: Don't allow the snake to reverse 180 degrees into itself
+- Rules: Can't move directly opposite to current direction
+- Examples:
+  - If moving RIGHT [1, 0], can't move LEFT [-1, 0]
+  - If moving UP [0, -1], can't move DOWN [0, 1]
+  - BUT: Can still move UP, DOWN, LEFT, RIGHT to turn!
 
-TARGET: Fully playable Snake game with scaling difficulty
+TARGET: Prevent instant self-collision deaths
 """
 
 import pygame
@@ -28,11 +32,10 @@ YELLOW = (255, 255, 0)
 CYAN = (0, 255, 255)
 
 BASE_FPS = 10
-MAX_FPS = 25
 
 # ============ SETUP ============
 screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-pygame.display.set_caption("Snake Game - Final Version")
+pygame.display.set_caption("Snake Game - Step 10: No Reverse")
 clock = pygame.time.Clock()
 
 # ============ HELPER FUNCTIONS ============
@@ -42,25 +45,30 @@ def spawn_food():
     max_y = WINDOW_HEIGHT // GRID_SIZE
     return [random.randint(0, max_x - 1), random.randint(0, max_y - 1)]
 
-def calculate_fps(score):
-    """Speed increases with score"""
-    # Every 5 points, increase speed by 1 FPS (up to MAX_FPS)
-    fps = BASE_FPS + (score // 5)
-    return min(fps, MAX_FPS)
+def is_opposite_direction(current_dir, new_dir):
+    """
+    Check if new_dir is exactly opposite to current_dir
+    
+    If we're moving RIGHT [1, 0], opposite is LEFT [-1, 0]
+    If we're moving UP [0, -1], opposite is DOWN [0, 1]
+    
+    To find opposite: multiply each component by -1
+    """
+    opposite = [-current_dir[0], -current_dir[1]]
+    return new_dir == opposite
 
 # ============ SNAKE DATA ============
 snake = [
-[20, 15],
-[19, 15],
-[18, 15],
+    [20, 15],
+    [19, 15],
+    [18, 15],
 ]
 
-direction = [1, 0]
+direction = [1, 0]  # Moving RIGHT initially
 next_direction = [1, 0]
 food = spawn_food()
 score = 0
 game_over = False
-high_score = 0
 
 # ============ GAME LOOP ============
 running = True
@@ -71,15 +79,31 @@ while running:
             running = False
         
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_UP and direction != [0, 1]:
-                next_direction = [0, -1]
-            elif event.key == pygame.K_DOWN and direction != [0, -1]:
-                next_direction = [0, 1]
-            elif event.key == pygame.K_LEFT and direction != [1, 0]:
-                next_direction = [-1, 0]
-            elif event.key == pygame.K_RIGHT and direction != [-1, 0]:
-                next_direction = [1, 0]
-            elif event.key == pygame.K_r and game_over:
+            # Capture what key was pressed
+            pressed_up = event.key == pygame.K_UP
+            pressed_down = event.key == pygame.K_DOWN
+            pressed_left = event.key == pygame.K_LEFT
+            pressed_right = event.key == pygame.K_RIGHT
+            
+            # Convert key press to direction vector
+            if pressed_up:
+                potential_direction = [0, -1]
+            elif pressed_down:
+                potential_direction = [0, 1]
+            elif pressed_left:
+                potential_direction = [-1, 0]
+            elif pressed_right:
+                potential_direction = [1, 0]
+            else:
+                potential_direction = None
+            
+            # NEW: Only accept the direction if it's NOT the opposite
+            if potential_direction is not None:
+                if not is_opposite_direction(direction, potential_direction):
+                    next_direction = potential_direction
+                # else: Ignore this input (player tried to reverse)
+            
+            if event.key == pygame.K_r and game_over:
                 snake = [[20, 15], [19, 15], [18, 15]]
                 direction = [1, 0]
                 next_direction = [1, 0]
@@ -107,8 +131,6 @@ while running:
             # Check food collision
             if snake[0] == food:
                 score += 1
-                if score > high_score:
-                    high_score = score
                 food = spawn_food()
             else:
                 snake.pop()
@@ -122,7 +144,7 @@ while running:
     # ===== DRAW PHASE =====
     screen.fill(BLACK)
 
-    # Draw grid (optional, for visual reference)
+    # Draw grid
     for x in range(0, WINDOW_WIDTH, GRID_SIZE):
         pygame.draw.line(screen, (30, 30, 30), (x, 0), (x, WINDOW_HEIGHT), 1)
     for y in range(0, WINDOW_HEIGHT, GRID_SIZE):
@@ -134,7 +156,7 @@ while running:
         y = segment[1] * GRID_SIZE
         
         if i == 0:
-            color = CYAN  # Head is cyan
+            color = CYAN
         else:
             color = GREEN
         
@@ -151,17 +173,14 @@ while running:
     font = pygame.font.Font(None, 24)
     score_text = font.render(f"Score: {score}", True, YELLOW)
     length_text = font.render(f"Length: {len(snake)}", True, YELLOW)
-    high_score_text = font.render(f"High Score: {high_score}", True, CYAN)
-    speed_text = font.render(f"Speed: {calculate_fps(score)} FPS", True, WHITE)
+    direction_text = font.render(f"Direction: {direction}", True, CYAN)
 
     screen.blit(score_text, (10, 10))
     screen.blit(length_text, (10, 40))
-    screen.blit(high_score_text, (10, 70))
-    screen.blit(speed_text, (10, 100))
+    screen.blit(direction_text, (10, 70))
 
     # Draw game over screen
     if game_over:
-        # Semi-transparent overlay
         overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
         overlay.set_alpha(180)
         overlay.fill(BLACK)
@@ -172,33 +191,20 @@ while running:
         
         game_over_text = large_font.render("GAME OVER", True, RED)
         final_score_text = small_font.render(f"Final Score: {score}", True, YELLOW)
-        restart_text = small_font.render("Press R to Restart or Q to Quit", True, WHITE)
+        restart_text = small_font.render("Press R to Restart", True, WHITE)
         
         screen.blit(game_over_text, (WINDOW_WIDTH//2 - 250, WINDOW_HEIGHT//2 - 120))
         screen.blit(final_score_text, (WINDOW_WIDTH//2 - 150, WINDOW_HEIGHT//2))
-        screen.blit(restart_text, (WINDOW_WIDTH//2 - 250, WINDOW_HEIGHT//2 + 80))
-        
-        # Check for quit
-        for event in pygame.event.get():
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_q:
-                    running = False
+        screen.blit(restart_text, (WINDOW_WIDTH//2 - 200, WINDOW_HEIGHT//2 + 80))
 
     pygame.display.flip()
-
-    # Dynamic FPS based on score
-    current_fps = calculate_fps(score)
-    clock.tick(current_fps)
+    clock.tick(BASE_FPS)
 
 pygame.quit()
 
 # ============ REFLECTION QUESTIONS ============
-# 1. What does calculate_fps() do? How does it make the game harder?
-# 2. What's the purpose of high_score? How is it useful?
-# 3. We prevent 180-degree turns (can't reverse into self immediately).
-#    Why is this important?
-# 4. Try these enhancements:
-#    - Add a \"level\" system that increases every 10 points
-#    - Make food worth different points (regular=1, special=5)
-#    - Add obstacles that snake can't pass through
-# 5. What's the highest score you can get?
+# 1. What does is_opposite_direction() do?
+# 2. How does [-current_dir[0], -current_dir[1]] calculate the opposite direction?
+# 3. Why is this check in the INPUT phase and not the UPDATE phase?
+# 4. Test: If the snake is moving RIGHT, what happens if you press LEFT?
+# 5. What CAN you press if the snake is moving RIGHT?
